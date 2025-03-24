@@ -1,0 +1,24 @@
+[package]
+name = "easyvpn"
+version = "0.1.0"
+description = "A Tauri App"
+authors = ["you"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["macos-private-api"] }
+# 移除通知插件，因为功能已包含在tauri core中
+# tauri-plugin-notification = "2" 
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# 暂时注释掉 reqwest 依赖，避免网络请求阻塞 UI
+# reqwest = { version = "0.11", features = ["json", "blocking"] }
+log = "0.4"
+env_logger = "0.10"
+

@@ -1,0 +1,33 @@
+/* Tailwind CSS v4 导入 */
+@import "tailwindcss";
+@tailwind base;
+@tailwind components;
+@tailwind utilities; 
+
+/* 禁止所有滚动行为 */
+@layer base {
+  html, body {
+    overflow: hidden;
+    height: 100%;
+    position: fixed;
+    width: 100%;
+  }
+}
+
+/* 隐藏所有滚动条 */
+@layer utilities {
+  /* WebKit浏览器 */
+  ::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Firefox */
+  * {
+    scrollbar-width: none;
+  }
+
+  /* IE 和 Edge */
+  * {
+    -ms-overflow-style: none;
+  }
+} 
