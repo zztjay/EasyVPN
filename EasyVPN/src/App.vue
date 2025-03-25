@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { invoke } from '@tauri-apps/api/core';
 import TrialTimer from "./components/TrialTimer.vue";
 import LeftServiceDays from "./components/LeftServiceDays.vue";
@@ -26,18 +26,29 @@ const isLoading = ref(false); // 加载状态
 
 // 连接/断开VPN
 async function toggleConnection() {
+  if (isLoading.value) return;
+  
   isLoading.value = true;
   
-  // 模拟网络延迟
-  await new Promise(resolve => setTimeout(resolve, 1000));
-  
-  // 切换连接状态
-  isConnected.value = !isConnected.value;
-  
-  isLoading.value = false;
-  
-  // 打印日志以便调试
-  console.log(`VPN 连接状态已切换为: ${isConnected.value ? '已连接' : '未连接'}`);
+  try {
+    if (isConnected.value) {
+      // 如果当前是已连接状态，则调用断开功能
+      await invoke('disconnect_vpn');
+      console.log('VPN已断开连接（Direct模式）');
+    } else {
+      // 如果当前是未连接状态，则调用连接功能
+      await invoke('connect_vpn');
+      console.log('VPN已连接（Rule模式）');
+    }
+    
+    // 切换连接状态
+    isConnected.value = !isConnected.value;
+  } catch (error) {
+    console.error(`VPN ${isConnected.value ? '断开' : '连接'}失败:`, error);
+    // 在出现错误时可以添加用户通知
+  } finally {
+    isLoading.value = false;
+  }
 }
 
 // 处理购买事件
@@ -46,16 +57,40 @@ function handlePurchase() {
   // 这里可以调用支付API或跳转到支付页面
 }
 
+
 // 组件挂载时初始化
 onMounted(async () => {
   console.log("应用程序已启动");
   
-  // 只保留问候测试
   try {
-    const message = await invoke('greet', { name: '用户' });
-    console.log(message);
+    console.log("准备调用start_clash...");
+    // 启动Clash
+    const result = await invoke('start_clash');
+    console.log('start_clash调用结果:', result);
+    console.log('Clash已启动并设置系统代理');
+    
   } catch (error) {
-    console.error('调用 greet 失败:', error);
+    console.error('初始化Clash失败, 错误详情:', error);
+    // 尝试打印更详细的错误信息
+    if (error instanceof Error) {
+      console.error('错误名称:', error.name);
+      console.error('错误消息:', error.message);
+      console.error('错误堆栈:', error.stack);
+    } else {
+      console.error('非标准错误对象:', JSON.stringify(error));
+    }
+  }
+  
+});
+
+// 组件卸载时清理
+onUnmounted(async () => {
+  try {
+    // 停止Clash并关闭系统代理
+    await invoke('stop_clash');
+    console.log('Clash已停止并关闭系统代理');
+  } catch (error) {
+    console.error('停止Clash失败:', error);
   }
 });
 

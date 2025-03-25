@@ -17,8 +17,10 @@ tauri = { version = "2", features = ["macos-private-api"] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-# 暂时注释掉 reqwest 依赖，避免网络请求阻塞 UI
-# reqwest = { version = "0.11", features = ["json", "blocking"] }
+# 取消注释 reqwest 依赖，需要用于与Clash API通信
+reqwest = { version = "0.11", features = ["json"] }
 log = "0.4"
 env_logger = "0.10"
+once_cell = "1.8"
+libc = "0.2"
 
