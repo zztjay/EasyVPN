@@ -4,6 +4,7 @@
 // 导入我们的命令模块
 mod commands;
 mod clash;
+mod common;
 
 use tauri::Manager;
 
@@ -32,12 +33,13 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            commands::greet,
             commands::start_clash,
             commands::stop_clash,
             commands::connect_vpn,
             commands::disconnect_vpn,
-            commands::get_clash_status
+            commands::get_clash_status,
+            commands::log_to_console,
+            commands::check_system_proxy
         ])
         .run(tauri::generate_context!())
         .expect("应用程序运行失败");

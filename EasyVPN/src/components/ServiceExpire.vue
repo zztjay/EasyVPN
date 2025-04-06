@@ -1,8 +1,6 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-
 // 接收价格参数
-const props = defineProps({
+defineProps({
   price: { type: Number, default: 69.99 }
 });
 

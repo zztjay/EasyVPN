@@ -26,7 +26,6 @@ pub enum ClashMode {
 
 // 启动Clash并设置系统代理
 pub fn start_clash_and_proxy(app_handle: &AppHandle<Wry>) -> Result<()> {
-    println!("进入start_clash_and_proxy函数");
     match start_clash(app_handle) {
         Ok(_) => println!("start_clash成功执行"),
         Err(e) => {
@@ -42,8 +41,6 @@ pub fn start_clash_and_proxy(app_handle: &AppHandle<Wry>) -> Result<()> {
             return Err(e);
         }
     }
-    
-    println!("start_clash_and_proxy函数执行完成");
     Ok(())
 }
 
@@ -60,9 +57,22 @@ fn start_clash(app_handle: &AppHandle<Wry>) -> Result<()> {
     let mut clash_lock = CLASH_PROCESS.lock().unwrap();
     
     // 如果已经启动，则不重复启动
+    // 添加额外检查，确保进程真的在运行
     if clash_lock.is_some() {
-        println!("Clash进程已存在，不重复启动");
-        return Ok(());
+        // 验证进程是否仍在运行
+        if let Some(ref mut child) = *clash_lock {
+            match child.try_wait() {
+                Ok(None) => {
+                    println!("Clash进程已存在且正在运行，不重复启动");
+                    return Ok(());
+                },
+                _ => {
+                    // 进程已退出或状态检查失败，清除引用并继续启动新进程
+                    println!("检测到已退出的Clash进程引用，清除并重新启动");
+                    *clash_lock = None;
+                }
+            }
+        }
     }
     
     // 获取资源路径
@@ -285,7 +295,6 @@ fn set_system_proxy(enable: bool) -> Result<()> {
 
 // 通过Clash API切换代理模式
 pub async fn set_mode(mode: ClashMode) -> Result<()> {
-    println!("设置Clash模式为: {:?}", mode);
     
     let client = Client::new();
     let mode_str = match mode {
@@ -345,3 +354,137 @@ pub async fn get_status() -> Result<serde_json::Value> {
         }
     }
 } 
+
+// 修改代理检查函数，返回错误码而不是布尔值
+pub fn check_system_proxy() -> std::result::Result<crate::common::ProxyCheckCode, std::io::Error> {
+    println!("检查系统代理状态...");
+
+    // 直接调用 check_clash_process，不通过 clash 命名空间
+    let process_running = check_clash_process();
+    if !process_running {
+        println!("Clash 进程不存在或已停止");
+        return Ok(crate::common::ProxyCheckCode::ClashProcessNotRunning);
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        // 获取HTTP代理状态
+        let output = Command::new("networksetup")
+            .args(&["-getwebproxy", "Wi-Fi"])
+            .output()?;
+        
+        let output_str = String::from_utf8_lossy(&output.stdout);
+        
+        // 检查代理是否启用
+        let enabled = output_str.contains("Enabled: Yes");
+        if !enabled {
+            return Ok(crate::common::ProxyCheckCode::ProxyNotEnabled);
+        }
+        
+        // 检查代理服务器和端口
+        let correct_server = output_str.contains("Server: 127.0.0.1") && 
+                             output_str.contains(&format!("Port: {}", CLASH_PROXY_PORT));
+        
+        if !correct_server {
+            return Ok(crate::common::ProxyCheckCode::ProxyServerIncorrect);
+        }
+        
+        return Ok(crate::common::ProxyCheckCode::Ok);
+    }
+    
+    #[cfg(target_os = "windows")]
+    {
+        // 获取Windows系统代理设置
+        let reg_query = Command::new("reg")
+            .args(&["query", "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings", "/v", "ProxyEnable", "/v", "ProxyServer"])
+            .output()?;
+        
+        let output_str = String::from_utf8_lossy(&reg_query.stdout);
+        
+        // 检查代理是否启用
+        let enabled = output_str.contains("ProxyEnable    REG_DWORD    0x1");
+        if !enabled {
+            return Ok(crate::common::ProxyCheckCode::ProxyNotEnabled);
+        }
+        
+        // 检查代理服务器和端口
+        let correct_server = output_str.contains(&format!("ProxyServer    REG_SZ    127.0.0.1:{}", CLASH_PROXY_PORT));
+        if !correct_server {
+            return Ok(crate::common::ProxyCheckCode::ProxyServerIncorrect);
+        }
+        
+        return Ok(crate::common::ProxyCheckCode::Ok);
+    }
+    
+    #[cfg(target_os = "linux")]
+    {
+        // 获取GNOME系统代理设置
+        let proxy_mode = Command::new("gsettings")
+            .args(&["get", "org.gnome.system.proxy", "mode"])
+            .output()?;
+        
+        let host = Command::new("gsettings")
+            .args(&["get", "org.gnome.system.proxy.http", "host"])
+            .output()?;
+        
+        let port = Command::new("gsettings")
+            .args(&["get", "org.gnome.system.proxy.http", "port"])
+            .output()?;
+        
+        let proxy_mode_str = String::from_utf8_lossy(&proxy_mode.stdout);
+        let host_str = String::from_utf8_lossy(&host.stdout);
+        let port_str = String::from_utf8_lossy(&port.stdout);
+        
+        // 检查代理是否启用
+        let enabled = proxy_mode_str.trim() == "'manual'";
+        if !enabled {
+            return Ok(crate::common::ProxyCheckCode::ProxyNotEnabled);
+        }
+        
+        // 检查代理服务器和端口是否正确
+        let correct_server = host_str.trim() == "'127.0.0.1'" && 
+                             port_str.trim() == &CLASH_PROXY_PORT.to_string();
+        if !correct_server {
+            return Ok(crate::common::ProxyCheckCode::ProxyServerIncorrect);
+        }
+        
+        return Ok(crate::common::ProxyCheckCode::Ok);
+    }
+    
+    // 默认情况下假设代理配置正确
+    #[allow(unreachable_code)]
+    Ok(crate::common::ProxyCheckCode::Ok)
+}
+
+
+/// 检查 Clash 进程是否存在并运行
+pub fn check_clash_process() -> bool {
+    let mut clash_lock = CLASH_PROCESS.lock().unwrap();
+    
+    if let Some(ref mut child) = *clash_lock {
+        // 尝试获取进程状态，如果能获取到退出状态说明进程已结束
+        match child.try_wait() {
+            Ok(None) => {
+                // 进程仍在运行
+                println!("Clash 进程正在运行，PID: {:?}", child.id());
+                true
+            },
+            Ok(Some(status)) => {
+                // 进程已退出，清除进程引用
+                println!("Clash 进程已退出，状态码: {:?}", status.code());
+                *clash_lock = None;  // 重要：清除引用
+                false
+            },
+            Err(e) => {
+                // 检查进程状态出错，清除可能无效的引用
+                println!("检查 Clash 进程状态出错: {:?}", e);
+                *clash_lock = None;  // 重要：清除引用
+                false
+            }
+        }
+    } else {
+        // 没有存储 Clash 进程
+        println!("没有找到正在运行的 Clash 进程");
+        false
+    }
+}

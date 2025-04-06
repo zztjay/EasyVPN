@@ -4,6 +4,7 @@ import { invoke } from '@tauri-apps/api/core';
 import TrialTimer from "./components/TrialTimer.vue";
 import LeftServiceDays from "./components/LeftServiceDays.vue";
 import ServiceExpire from "./components/ServiceExpire.vue";
+import ErrorMessage from "./components/ErrorMessage.vue";
 
 // 定义响应式状态，使模板能正确识别
 defineProps({});
@@ -20,9 +21,16 @@ const serviceDaysLeft = ref(27);
 // 服务月费
 const monthlyFee = ref(69.99);
 
-// 连接状态 - 简化后的状态
-const isConnected = ref(false);
+// 连接状态 - 扩展为三种状态
+const connectionStatus = ref("disconnected"); // 可能的值: "disconnected", "connected", "failed"
 const isLoading = ref(false); // 加载状态
+const errorMessage = ref("服务器无响应，请检查网络连接后重试");
+
+// 创建一个自定义日志函数
+async function logToTerminal(message: string) {
+  await invoke('log_to_console', { message });
+  console.log(message); // 仍然在浏览器控制台显示
+}
 
 // 连接/断开VPN
 async function toggleConnection() {
@@ -31,24 +39,34 @@ async function toggleConnection() {
   isLoading.value = true;
   
   try {
-    if (isConnected.value) {
+    if (connectionStatus.value === "connected") {
       // 如果当前是已连接状态，则调用断开功能
       await invoke('disconnect_vpn');
-      console.log('VPN已断开连接（Direct模式）');
+      connectionStatus.value = "disconnected";
+      logToTerminal('VPN已断开连接（Direct模式）');
     } else {
-      // 如果当前是未连接状态，则调用连接功能
-      await invoke('connect_vpn');
-      console.log('VPN已连接（Rule模式）');
+      // 如果当前是未连接或连接失败状态，则调用连接功能
+      await invoke('connect_vpn', { restart: true });
+      connectionStatus.value = "connected";
+      logToTerminal('VPN已连接（Rule模式）');
     }
-    
-    // 切换连接状态
-    isConnected.value = !isConnected.value;
+
+    logToTerminal('连接状态已切换为:' + connectionStatus.value);
+
   } catch (error) {
-    console.error(`VPN ${isConnected.value ? '断开' : '连接'}失败:`, error);
-    // 在出现错误时可以添加用户通知
+    connectionStatus.value = "failed";
+    errorMessage.value = String(error) || "连接失败，请稍后重试";
+    logToTerminal('VPN ' + (connectionStatus.value === "connected" ? '断开' : '连接') + '失败:' + error);
   } finally {
     isLoading.value = false;
   }
+}
+
+// 重试连接
+function retryConnection() {
+  // 将状态重置为未连接，然后尝试连接
+  connectionStatus.value = "disconnected";
+  toggleConnection();
 }
 
 // 处理购买事件
@@ -60,25 +78,36 @@ function handlePurchase() {
 
 // 组件挂载时初始化
 onMounted(async () => {
-  console.log("应用程序已启动");
   
   try {
-    console.log("准备调用start_clash...");
     // 启动Clash
-    const result = await invoke('start_clash');
-    console.log('start_clash调用结果:', result);
-    console.log('Clash已启动并设置系统代理');
+    await invoke('start_clash');
+
+    // 设置定时器，每6秒检查一次系统代理状态
+    const proxyCheckInterval = setInterval(async () => {
+      try {
+        if(connectionStatus.value === "connected"){
+          const proxyCheckResult = await invoke('check_system_proxy');
+          if (proxyCheckResult!= 'Ok') {
+            connectionStatus.value = "failed";
+            errorMessage.value = "系统代理异常，请重新连接！";
+            logToTerminal('系统代理检查失败，VPN连接状态已更新为失败');
+          }
+      }
+      } catch (error) {
+        logToTerminal('检查系统代理异常:' + error);
+      }
+    }, 6000); 
+    
+    // 组件卸载时清除定时器
+    onUnmounted(() => {
+      clearInterval(proxyCheckInterval);
+    });
     
   } catch (error) {
-    console.error('初始化Clash失败, 错误详情:', error);
-    // 尝试打印更详细的错误信息
-    if (error instanceof Error) {
-      console.error('错误名称:', error.name);
-      console.error('错误消息:', error.message);
-      console.error('错误堆栈:', error.stack);
-    } else {
-      console.error('非标准错误对象:', JSON.stringify(error));
-    }
+    connectionStatus.value = "failed";
+    errorMessage.value = "EasyVPN启动失败，请重启应用！";
+    logToTerminal('初始化Clash失败, 错误详情:' + error);
   }
   
 });
@@ -97,13 +126,15 @@ onUnmounted(async () => {
 // 将需要在模板中使用的变量和方法定义为组件属性
 defineExpose({
   userStatus,
-  isConnected,
+  connectionStatus,
   toggleConnection,
+  retryConnection,
   isLoading,
   totalTrialSeconds,
   serviceDaysLeft,
   monthlyFee,
-  handlePurchase
+  handlePurchase,
+  errorMessage
 });
 </script>
 
@@ -118,47 +149,76 @@ defineExpose({
         <h1 class="text-2xl font-semibold text-gray-800">EasyVPN</h1>
       </div>
       
-      <!-- Connection Status -->
-      <div id="connection-status" class="mb-8">
+      <!-- 未连接状态 -->
+      <div v-if="connectionStatus === 'disconnected'" id="connection-status" class="mb-8">
         <div class="w-32 h-32 mx-auto mb-6 relative">
-          <div 
-            class="absolute inset-0 rounded-full" 
-            :class="isConnected ? 'bg-green-100 animate-pulse' : 'bg-pink-100 animate-pulse'"
-          ></div>
-          <div 
-            class="absolute inset-3 rounded-full" 
-            :class="isConnected ? 'bg-green-200' : 'bg-pink-200'"
-          ></div>
-          <div 
-            class="absolute inset-6 rounded-full" 
-            :class="isConnected ? 'bg-green-300' : 'bg-pink-300'"
-          ></div>
-          <div 
-            class="absolute inset-9 rounded-full flex items-center justify-center" 
-            :class="isConnected ? 'bg-green-400' : 'bg-pink-400'"
-          >
+          <div class="absolute inset-0 rounded-full bg-pink-100 animate-pulse"></div>
+          <div class="absolute inset-3 rounded-full bg-pink-200"></div>
+          <div class="absolute inset-6 rounded-full bg-pink-300"></div>
+          <div class="absolute inset-9 rounded-full bg-pink-400 flex items-center justify-center">
             <i class="fa-solid fa-power-off text-white text-2xl"></i>
           </div>
         </div>
-        <h2 class="text-xl font-semibold text-gray-800 mb-2">
-          {{ isConnected ? '已连接' : '未连接' }}
-        </h2>
-        <p class="text-gray-500 text-sm">
-          {{ isConnected ? '您已连接到安全VPN' : '点击连接到安全VPN' }}
-        </p>
+        <h2 class="text-xl font-semibold text-gray-800 mb-2">未连接</h2>
+        <!-- <p class="text-gray-500 text-sm">点击连接到安全VPN</p> -->
+      </div>
+      
+      <!-- 已连接状态 -->
+      <div v-if="connectionStatus === 'connected'" id="connection-status" class="mb-8">
+        <div class="w-32 h-32 mx-auto mb-6 relative">
+          <div class="absolute inset-0 rounded-full bg-green-100 animate-pulse"></div>
+          <div class="absolute inset-3 rounded-full bg-green-200"></div>
+          <div class="absolute inset-6 rounded-full bg-green-300"></div>
+          <div class="absolute inset-9 rounded-full bg-green-400 flex items-center justify-center">
+            <i class="fa-solid fa-power-off text-white text-2xl"></i>
+          </div>
+        </div>
+        <h2 class="text-xl font-semibold text-gray-800 mb-2">已连接</h2>
+        <!-- <p class="text-gray-500 text-sm">您已连接到安全VPN</p> -->
+      </div>
+      
+      <!-- 连接失败状态 -->
+      <div v-if="connectionStatus === 'failed'" id="connection-status" class="mb-4">
+        <div class="w-32 h-32 mx-auto mb-4 relative">
+          <div class="absolute inset-0 rounded-full bg-red-100"></div>
+          <div class="absolute inset-3 rounded-full bg-red-200"></div>
+          <div class="absolute inset-6 rounded-full bg-red-300"></div>
+          <div class="absolute inset-9 rounded-full bg-red-400 flex items-center justify-center">
+            <i class="fa-solid fa-xmark text-white text-2xl"></i>
+          </div>
+        </div>
+        <h2 class="text-xl font-semibold text-gray-800 mb-1">连接失败</h2>
+        <!-- <p class="text-gray-500 text-sm">无法建立VPN连接</p> -->
       </div>
 
-      <!-- Connect Button -->
+      <!-- 错误信息组件 (仅在连接失败时显示) -->
+      <ErrorMessage v-if="connectionStatus === 'failed'" :message="errorMessage" />
+
+      <!-- 连接/断开按钮 - 根据状态显示不同按钮 -->
       <button 
+        v-if="connectionStatus !== 'failed'"
         id="connect-button" 
         class="w-full text-white rounded-lg py-4 mb-6 transition-colors duration-200 flex items-center justify-center space-x-2"
-        :class="isConnected ? 'bg-green-500 hover:bg-green-600' : 'bg-pink-500 hover:bg-pink-600'"
+        :class="connectionStatus === 'connected' ? 'bg-green-500 hover:bg-green-600' : 'bg-pink-500 hover:bg-pink-600'"
         @click="toggleConnection"
         :disabled="isLoading"
       >
         <i v-if="isLoading" class="fa-solid fa-spinner fa-spin"></i>
-        <i v-else :class="isConnected ? 'fa-solid fa-plug-circle-xmark' : 'fa-solid fa-plug-circle-bolt'"></i>
-        <span>{{ isConnected ? '断开' : '连接' }}</span>
+        <i v-else :class="connectionStatus === 'connected' ? 'fa-solid fa-plug-circle-xmark' : 'fa-solid fa-plug-circle-bolt'"></i>
+        <span>{{ connectionStatus === 'connected' ? '断开' : '连接' }}</span>
+      </button>
+      
+      <!-- 重试按钮 - 仅在连接失败时显示 -->
+      <button 
+        v-if="connectionStatus === 'failed'"
+        id="connect-button" 
+        class="w-full bg-pink-500 hover:bg-pink-600 text-white rounded-lg py-3 mb-6 transition-colors duration-200 flex items-center justify-center space-x-2"
+        @click="retryConnection"
+        :disabled="isLoading"
+      >
+        <i v-if="isLoading" class="fa-solid fa-spinner fa-spin"></i>
+        <i v-else class="fa-solid fa-rotate"></i>
+        <span>重试</span>
       </button>
       
       <!-- 根据用户状态显示不同的组件 -->

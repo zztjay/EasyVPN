@@ -1,8 +1,6 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-
 // 接收剩余天数
-const props = defineProps({
+defineProps({
   serviceDays: { type: Number, default: 27 }
 });
 </script>
