@@ -3,7 +3,8 @@
 // 导入必要的模块
 use tauri::{AppHandle, Wry};
 use crate::clash::{self, ClashMode};
-use crate::common::ProxyCheckCode;
+use crate::common::{ProxyCheckCode, AccountStatus};
+use crate::account;
 /// 启动Clash并设置系统代理
 #[tauri::command]
      pub fn start_clash(app_handle: AppHandle<Wry>) -> Result<(), String> {
@@ -66,5 +67,20 @@ pub async fn check_system_proxy() -> Result<ProxyCheckCode, String> {
             Ok(ProxyCheckCode::CheckError)
         }
     }
+}
+
+/// 获取账号信息
+#[tauri::command]
+pub async fn get_account_info() -> Result<account::Account, String> {
+    match account::get_current_account().await {
+        Ok(account) => Ok(account),
+        Err(e) => Err(format!("获取账号信息失败: {}", e))
+    }
+}
+
+/// 获取账号状态的文本描述
+#[tauri::command]
+pub fn get_account_status_text(status: AccountStatus) -> String {
+    status.get_message().to_string()
 }
 
