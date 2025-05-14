@@ -503,7 +503,7 @@ checksum = "d38f2da7a0a2c4ccf0065be06397cc26a81f4e528be095826eee9d4adbb8c60f"
 dependencies = [
  "byteorder",
  "fnv",
- "uuid 1.16.0",
+ "uuid",
 ]
 
 [[package]]
@@ -910,12 +910,11 @@ name = "easyvpn"
 version = "0.1.0"
 dependencies = [
  "env_logger",
+ "futures-util",
  "hostname",
  "lazy_static",
  "libc",
  "log",
- "mac_address",
- "machine-id",
  "machine-uid",
  "once_cell",
  "rand 0.8.5",
@@ -2305,28 +2304,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c41e0c4fef86961ac6d6f8a82609f55f31b05e4fce149ac5710e439df7619ba4"
 
 [[package]]
-name = "mac_address"
-version = "1.1.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c0aeb26bf5e836cc1c341c8106051b573f1766dfa05aa87f0b98be5e51b02303"
-dependencies = [
- "nix",
- "winapi",
-]
-
-[[package]]
-name = "machine-id"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "56cc5ade290d3cc0b7c9444570034640041e02333790ac4083ad9dec32318fcb"
-dependencies = [
- "lazy_static",
- "log",
- "thiserror 1.0.69",
- "uuid 0.8.2",
-]
-
-[[package]]
 name = "machine-uid"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3507,10 +3484,12 @@ dependencies = [
  "system-configuration",
  "tokio",
  "tokio-native-tls",
+ "tokio-util",
  "tower-service",
  "url",
  "wasm-bindgen",
  "wasm-bindgen-futures",
+ "wasm-streams",
  "web-sys",
  "winreg 0.50.0",
 ]
@@ -3744,7 +3723,7 @@ dependencies = [
  "serde",
  "serde_json",
  "url",
- "uuid 1.16.0",
+ "uuid",
 ]
 
 [[package]]
@@ -4408,7 +4387,7 @@ dependencies = [
  "thiserror 2.0.12",
  "time",
  "url",
- "uuid 1.16.0",
+ "uuid",
  "walkdir",
 ]
 
@@ -4546,7 +4525,7 @@ dependencies = [
  "toml",
  "url",
  "urlpattern",
- "uuid 1.16.0",
+ "uuid",
  "walkdir",
 ]
 
@@ -5083,15 +5062,6 @@ name = "utf8_iter"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b6c140620e7ffbb22c2dee59cafe6084a59b5ffc27a8859a5f0d494b5d52b6be"
-
-[[package]]
-name = "uuid"
-version = "0.8.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bc5cf98d8186244414c848017f0e2676b3fcb46807f6668a97dfe67359a3c4b7"
-dependencies = [
- "getrandom 0.2.15",
-]
 
 [[package]]
 name = "uuid"

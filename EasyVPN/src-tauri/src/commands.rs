@@ -78,9 +78,20 @@ pub async fn get_account_info() -> Result<account::Account, String> {
     }
 }
 
-/// 获取账号状态的文本描述
 #[tauri::command]
-pub fn get_account_status_text(status: AccountStatus) -> String {
-    status.get_message().to_string()
+pub async fn get_traffic() -> Result<clash::TrafficData, String> {
+    clash::get_traffic().await.map_err(|e| e.to_string())
 }
+
+#[tauri::command]
+pub async fn speed_test() -> Result<u64, String> {
+    clash::speed_test().await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_speed_test_results() -> Vec<u64> {
+    clash::get_speed_test_results()
+}
+
+
 

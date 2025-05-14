@@ -6,101 +6,92 @@ mod commands;
 mod clash;
 mod common;
 mod account;
-mod web_login;
-
-use tauri::Manager;
+use tauri::{AppHandle, Manager};
+use tokio::join;
 
 fn main() {
     println!("应用程序启动...");
     
     let tauri_builder = tauri::Builder::default();
-    println!("Tauri Builder已创建");
     
     tauri_builder
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            println!("设置阶段开始...");
             
-            // 在应用启动时启动Clash
             let app_handle = app.handle();
             
-            // 检查所有窗口
-            println!("检查应用中的所有窗口...");
-            for window in app.webview_windows().values() {
-                println!("找到窗口: {}", window.label());
-            }
-            
-            println!("正在获取主窗口...");
             // 创建窗口关闭事件监听器
             if let Some(main_window) = app.get_webview_window("main") {
-                println!("成功找到主窗口，设置关闭事件监听器");
                 
-                if let Ok(url) = main_window.url() {
-                    println!("主窗口URL: {:?}", url);
-                }
-                
-                if let Ok(title) = main_window.title() {
-                    println!("主窗口标题: {}", title);
-                }
-                
-                if let Ok(visible) = main_window.is_visible() {
-                    println!("主窗口是否可见: {}", visible);
-                }
-                
+                // 设置关闭事件监听器
                 let app_handle_clone = app_handle.clone();
                 main_window.on_window_event(move |event| {
                     match event {
                         tauri::WindowEvent::CloseRequested { .. } => {
                             println!("接收到窗口关闭请求");
                             // 在窗口关闭时停止Clash并关闭系统代理
-                            if let Err(e) = clash::stop_clash_and_proxy(&app_handle_clone) {
+                            if let Err(e) = commands::stop_clash(app_handle_clone.clone()) {
                                 eprintln!("关闭Clash时出错: {}", e);
                             }
-                        },
-                        tauri::WindowEvent::Focused(focused) => {
-                            println!("窗口焦点状态变更: {}", focused);
-                        },
-                        tauri::WindowEvent::Resized(..) => {
-                            println!("窗口大小已调整");
-                        },
+                        }
                         _ => {}
                     }
                 });
-                
-                // 尝试显示主窗口
-                if let Err(e) = main_window.show() {
-                    eprintln!("显示主窗口失败: {}", e);
-                } else {
-                    println!("已尝试显示主窗口");
-                }
-                
-            } else {
-                eprintln!("警告：无法获取主窗口实例！");
+            
             }
             
-            println!("正在初始化账号...");
-            // 初始化账号
-            tauri::async_runtime::block_on(async {
-                if let Err(e) = account::initialize_account(app_handle.clone()).await {
-                    eprintln!("初始化账号失败: {}", e);
-                } else {
-                    println!("账号初始化成功");
-                }
-            });
-            
-            println!("正在启动Web登录HTTP服务器...");
-            // 启动Web登录HTTP服务器
+            // 在后台执行初始化流程，完成后再显示窗口
             let app_handle_clone = app_handle.clone();
             tauri::async_runtime::spawn(async move {
-                web_login::start_login_server(app_handle_clone);
-                println!("Web登录服务已启动");
+                println!("正在并行初始化...");
+                
+                // 并行执行初始化任务
+                let clash_task = tauri::async_runtime::spawn({
+                    let app_handle = app_handle_clone.clone();
+                    async move {
+                        if let Err(e) = commands::start_clash(app_handle) {
+                            eprintln!("启动Clash失败: {}", e);
+                            false
+                        } else {
+                            println!("Clash启动成功");
+                            true
+                        }
+                    }
+                });
+                
+                let account_task = tauri::async_runtime::spawn({
+                    let app_handle = app_handle_clone.clone();
+                    async move {
+                        if let Err(e) = account::initialize_account(app_handle).await {
+                            eprintln!("初始化账号失败: {}", e);
+                            false
+                        } else {
+                            println!("账号初始化成功");
+                            true
+                        }
+                    }
+                });
+                
+                // 等待两个任务完成
+                let (_clash_result, _account_result) = join!(clash_task, account_task);
+                
+                // 初始化完成后显示窗口
+                println!("后端初始化完成，准备显示窗口...");
+                if let Some(main_window) = app_handle_clone.get_webview_window("main") {
+                    // 直接显示窗口，前端通过监听visibilitychange事件知道窗口已显示
+                    if let Err(e) = main_window.show() {
+                        eprintln!("显示主窗口失败: {}", e);
+                    } else {
+                        println!("主窗口已显示");
+                    }
+                }
             });
             
             println!("设置阶段完成");
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            commands::start_clash,
+            // 移除start_clash命令，因为现在在初始化时自动启动
             commands::stop_clash,
             commands::connect_vpn,
             commands::disconnect_vpn,
@@ -108,10 +99,13 @@ fn main() {
             commands::log_to_console,
             commands::check_system_proxy,
             commands::get_account_info,
-            commands::get_account_status_text,
+            commands::get_traffic,
+            commands::speed_test,
+            commands::get_speed_test_results,
             account::login,
             account::logout,
-            account::unbind_device,
+            account::get_current_device_info,
+            account::update_and_get_account,
         ])
         .run(tauri::generate_context!())
         .expect("应用程序运行失败");

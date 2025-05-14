@@ -29,7 +29,7 @@ pub enum AccountStatus {
     SERVICE_END,   // 服务到期（普通账号）
     TRIAL,         // 试用期中（设备游客账号）
     TRIAL_END,     // 试用期结束（设备游客账号）
-    UNREGISTERED,  // 未注册
+    NO_INIT // 未初始化
 }
 
 impl AccountStatus {
@@ -40,7 +40,7 @@ impl AccountStatus {
             Self::SERVICE_END => "服务已到期",
             Self::TRIAL => "试用期中",
             Self::TRIAL_END => "试用期已结束",
-            Self::UNREGISTERED => "未注册",
+            Self::NO_INIT => "未初始化",
         }
     }
     
@@ -52,7 +52,8 @@ impl AccountStatus {
             "SERVICE_END" => Self::SERVICE_END,
             "TRIAL" => Self::TRIAL,
             "TRIAL_END" => Self::TRIAL_END,
-            _ => Self::UNREGISTERED,
+            "NO_INIT" => Self::NO_INIT,
+            _ => Self::NO_INIT, // 默认为未初始化状态
         }
     }
     
@@ -64,7 +65,7 @@ impl AccountStatus {
             Self::SERVICE_END => "SERVICE_END",
             Self::TRIAL => "TRIAL",
             Self::TRIAL_END => "TRIAL_END",
-            Self::UNREGISTERED => "UNREGISTERED",
+            Self::NO_INIT => "NO_INIT",
         }
     }
 }

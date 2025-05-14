@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { handlePurchase as bizHandlePurchase } from '../utils/bizUtil';
+
 // 接收价格参数
 defineProps({
   price: { type: Number, default: 69.99 }
@@ -7,7 +9,8 @@ defineProps({
 // 购买服务事件
 const emit = defineEmits(['purchase']);
 
-function handlePurchase() {
+async function handlePurchase() {
+  await bizHandlePurchase('ServiceExpire');
   emit('purchase');
 }
 </script>

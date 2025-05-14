@@ -5,6 +5,7 @@ use tauri::{Wry, AppHandle, Manager};
 use serde::{Deserialize, Serialize};
 use reqwest::Client;
 use once_cell::sync::Lazy;
+use futures_util::StreamExt;
 
 // 全局单例，存储clash进程
 static CLASH_PROCESS: Lazy<Mutex<Option<Child>>> = Lazy::new(|| Mutex::new(None));
@@ -16,6 +17,9 @@ const CLASH_API_PORT: u16 = 9090;
 const CLASH_PROXY_PORT: u16 = 7890;
 const CLASH_SOCKS_PORT: u16 = 7891;
 
+// 测速结果队列大小
+const SPEED_TEST_QUEUE_SIZE: usize = 10;
+
 // Clash模式枚举
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ClashMode {
@@ -23,6 +27,16 @@ pub enum ClashMode {
     Global,
     Direct,
 }
+
+// 流量数据结构
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TrafficData {
+    pub up: u64,
+    pub down: u64,
+}
+
+// 测速结果队列
+static SPEED_TEST_RESULTS: Lazy<Mutex<Vec<u64>>> = Lazy::new(|| Mutex::new(Vec::with_capacity(SPEED_TEST_QUEUE_SIZE)));
 
 // 启动Clash并设置系统代理
 pub fn start_clash_and_proxy(app_handle: &AppHandle<Wry>) -> Result<()> {
@@ -52,7 +66,7 @@ pub fn stop_clash_and_proxy(_app_handle: &AppHandle<Wry>) -> Result<()> {
 }
 
 // 启动Clash
-fn start_clash(app_handle: &AppHandle<Wry>) -> Result<()> {
+ fn start_clash(app_handle: &AppHandle<Wry>) -> Result<()> {
     println!("进入start_clash函数");
     let mut clash_lock = CLASH_PROCESS.lock().unwrap();
     
@@ -487,4 +501,111 @@ pub fn check_clash_process() -> bool {
         println!("没有找到正在运行的 Clash 进程");
         false
     }
+}
+
+// 获取流量数据
+pub async fn get_traffic() -> Result<TrafficData> {
+    let client = Client::new();
+    let response = client.get(format!("http://127.0.0.1:{}/traffic", CLASH_API_PORT))
+        .send()
+        .await;
+    
+    match response {
+        Ok(res) => {
+            if !res.status().is_success() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("请求失败，状态码: {}", res.status()),
+                ));
+            }
+
+            let mut stream = res.bytes_stream();
+            let result = if let Some(chunk_result) = stream.next().await {
+                match chunk_result {
+                    Ok(data) => {
+                        // 解析 JSON 数据
+                        match serde_json::from_slice::<TrafficData>(&data) {
+                            Ok(traffic_data) => Ok(traffic_data),
+                            Err(e) => {
+                                eprintln!("解析流量数据失败: {}", e);
+                                Err(std::io::Error::new(
+                                    std::io::ErrorKind::Other,
+                                    format!("解析流量数据失败: {}", e),
+                                ))
+                            }
+                        }
+                    },
+                    Err(e) => {
+                        eprintln!("读取数据块失败: {}", e);
+                        Err(std::io::Error::new(
+                            std::io::ErrorKind::Other,
+                            format!("读取数据块失败: {}", e),
+                        ))
+                    }
+                }
+            } else {
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "没有接收到数据",
+                ))
+            };
+
+            // 显式关闭连接
+            drop(stream);
+            result
+        },
+        Err(e) => {
+            eprintln!("获取流量数据失败: {}", e);
+            Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("获取流量数据失败: {}", e),
+            ))
+        }
+    }
+}
+
+// 执行测速
+pub async fn speed_test() -> Result<u64> {
+    let client = Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+    
+    let start = std::time::Instant::now();
+    
+    match client.get("https://www.gstatic.com/generate_204").send().await {
+        Ok(_) => {
+            let duration = start.elapsed().as_millis() as u64;
+            
+            // 更新测速结果队列
+            let mut results = SPEED_TEST_RESULTS.lock().unwrap();
+            if results.len() >= SPEED_TEST_QUEUE_SIZE {
+                results.remove(0);
+            }
+            results.push(duration);
+            
+            // 计算中位数
+            let mut sorted_results = results.clone();
+            sorted_results.sort();
+            let median = if sorted_results.len() % 2 == 0 {
+                (sorted_results[sorted_results.len()/2 - 1] + sorted_results[sorted_results.len()/2]) / 2
+            } else {
+                sorted_results[sorted_results.len()/2]
+            };
+            
+            Ok(median)
+        },
+        Err(e) => {
+            eprintln!("测速失败: {}", e);
+            Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("测速失败: {}", e),
+            ))
+        }
+    }
+}
+
+// 获取测速结果
+pub fn get_speed_test_results() -> Vec<u64> {
+    SPEED_TEST_RESULTS.lock().unwrap().clone()
 }

@@ -4,12 +4,15 @@
 export const ErrorMessages = {
   // 连接相关错误
   CONNECTION_FAILED: "连接失败，请重试",
-  PROXY_ERROR: "系统代理异常",
-  CLASH_START_FAILED: "启动失败，请重启",
+  PROXY_ERROR: "系统代理异常，请重试",
+  CLASH_START_FAILED: "启动失败，请重试",
   
   // 账号状态相关错误
   ACCOUNT_STATUS_INVALID: "账号状态无效",
-  SERVICE_EXPIRED: "服务已到期",
+  SERVICE_END: "服务已到期，请续费",
+  TRIAL_END: "试用已结束，请购买套餐",
+  NO_SERVICE: "您尚未开通服务，请购买套餐",
+  NO_INIT: "账号初始化失败，请重启",
   ACCOUNT_CHANGED: "账号状态已变更",
   
   // 通用错误
